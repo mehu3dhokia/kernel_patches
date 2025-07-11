@@ -1276,12 +1276,12 @@ index dc1ca5d4..727911ff 100644
  	return db;
  }
  
- static DEFINE_MUTEX(ksu_rules);
+static DEFINE_MUTEX(ksu_rules);
  
 -void apply_kernelsu_rules()
 +void ksu_apply_kernelsu_rules()
  {
- 	struct policydb *db;
+	struct policydb *db;
  	
 -	if (!getenforce()) {
 +	if (!ksu_getenforce()) {
@@ -1289,8 +1289,8 @@ index dc1ca5d4..727911ff 100644
  	}
  
 @@ -139,6 +139,14 @@ void apply_kernelsu_rules()
-     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
-     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "sigkill");
+	ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
+	ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "sigkill");
  
 +#ifdef CONFIG_KSU_SUSFS
 +	// Allow umount in zygote process without installing zygisk
@@ -1303,7 +1303,7 @@ index dc1ca5d4..727911ff 100644
  	mutex_unlock(&ksu_rules);
  }
  
-@@ -228,13 +228,13 @@ static void reset_avc_cache()
+@@ -228,13 +236,13 @@ static void reset_avc_cache()
  	selinux_xfrm_notify_policyload();
  }
  
