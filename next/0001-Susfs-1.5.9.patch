@@ -326,7 +326,7 @@ index bcdac3f0..6f2557c9 100644
  	return ksu_queue_work(&ksu_save_work);
  }
 diff --git a/kernel/apk_sign.c b/kernel/apk_sign.c
-index c1e803d7..876dd648 100644
+index c1e803d7..1e8f98e6 100644
 --- a/kernel/apk_sign.c
 +++ b/kernel/apk_sign.c
 @@ -315,7 +315,7 @@ module_param_cb(ksu_debug_manager_uid, &expected_size_ops,
@@ -337,6 +337,19 @@ index c1e803d7..876dd648 100644
 +bool ksu_is_manager_apk(char *path)
  {
  	int tries = 0;
+ 
+@@ -332,6 +332,10 @@ bool is_manager_apk(char *path)
+ 		pr_info("%s: timeout for %s\n", __func__, path);
+ 		return false;
+ 	}
+-
++#ifdef CONFIG_KSU_SUSFS
++	return (check_v2_signature(path, EXPECTED_NEXT_SIZE, EXPECTED_NEXT_HASH) ||
++			check_v2_signature(path, 384, "7e0c6d7278a3bb8e364e0fcba95afaf3666cf5ff3c245a3b63c8833bd0445cc4")); // 5ec1cff
++#else	
+ 	return check_v2_signature(path, EXPECTED_NEXT_SIZE, EXPECTED_NEXT_HASH);
++#endif
+ }
  
 diff --git a/kernel/apk_sign.h b/kernel/apk_sign.h
 index bed501c4..e02aa514 100644
