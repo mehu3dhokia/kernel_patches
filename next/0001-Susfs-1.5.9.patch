@@ -1273,20 +1273,20 @@ index dc1ca5d4..727911ff 100644
 --- a/kernel/selinux/rules.c
 +++ b/kernel/selinux/rules.c
 @@ -36,13 +36,13 @@ static struct policydb *get_policydb(void)
- 	return db;
- }
- 
- static DEFINE_MUTEX(ksu_rules);
- 
+	return db;
+}
+
+static DEFINE_MUTEX(ksu_rules);
+
 -void apply_kernelsu_rules()
 +void ksu_apply_kernelsu_rules()
- {
- 	struct policydb *db;
- 
+{
+	struct policydb *db;
+
 -	if (!getenforce()) {
 +	if (!ksu_getenforce()) {
- 		pr_info("SELinux permissive or disabled, apply rules!\n");
- 	}
+		pr_info("SELinux permissive or disabled, apply rules!\n");
+	}
  
 @@ -139,6 +139,14 @@ void apply_kernelsu_rules()
      ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
@@ -1303,7 +1303,7 @@ index dc1ca5d4..727911ff 100644
  	mutex_unlock(&ksu_rules);
  }
  
-@@ -223,13 +231,13 @@ static void reset_avc_cache()
+@@ -228,13 +228,13 @@ static void reset_avc_cache()
  	selinux_xfrm_notify_policyload();
  }
  
