@@ -1303,7 +1303,7 @@ static DEFINE_MUTEX(ksu_rules);
  	mutex_unlock(&ksu_rules);
  }
  
-@@ -228,13 +228,13 @@ static void reset_avc_cache()
+@@ -231,13 +231,13 @@ static void reset_avc_cache()
  	selinux_xfrm_notify_policyload();
  }
  
