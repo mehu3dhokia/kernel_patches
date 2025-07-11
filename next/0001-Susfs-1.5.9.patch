@@ -1296,7 +1296,7 @@ index dc1ca5d4..727911ff 100644
 +	susfs_set_zygote_sid();
 +#endif
 +
- 	mutex_lock(&ksu_rules);
+ 	rcu_read_unlock();
  }
  
 @@ -223,13 +231,13 @@ static void reset_avc_cache()
