@@ -1275,9 +1275,7 @@ index dc1ca5d4..727911ff 100644
 @@ -36,9 +36,9 @@ static struct policydb *get_policydb(void)
  	return db;
  }
-
- static DEFINE_MUTEX(ksu_rules);
-
+ 
 -void apply_kernelsu_rules()
 +void ksu_apply_kernelsu_rules()
  {
@@ -1298,7 +1296,7 @@ index dc1ca5d4..727911ff 100644
 +	susfs_set_zygote_sid();
 +#endif
 +
- 	rcu_read_unlock();
+ 	mutex_lock(&ksu_rules);
  }
  
 @@ -223,13 +231,13 @@ static void reset_avc_cache()
