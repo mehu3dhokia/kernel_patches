@@ -1272,7 +1272,7 @@ diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
 index dc1ca5d4..727911ff 100644
 --- a/kernel/selinux/rules.c
 +++ b/kernel/selinux/rules.c
-@@ -36,11 +36,13 @@ static struct policydb *get_policydb(void)
+@@ -36,13 +36,13 @@ static struct policydb *get_policydb(void)
  	return db;
  }
  
