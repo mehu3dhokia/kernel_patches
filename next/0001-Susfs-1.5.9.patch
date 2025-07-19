@@ -1,6 +1,6 @@
-From cc5e0e9d24342063d6b74577a421cf928b4df008 Mon Sep 17 00:00:00 2001
+From c105bd07cb63cd451b828deec22dca4d0f659b91 Mon Sep 17 00:00:00 2001
 From: sidex15 <24408329+sidex15@users.noreply.github.com>
-Date: Sat, 19 Jul 2025 20:00:49 +0800
+Date: Sun, 20 Jul 2025 07:24:26 +0800
 Subject: [PATCH] kernel: implement susfs v1.5.9
 
 ---
@@ -190,7 +190,7 @@ index ab6dd5c9d..f9ac42569 100644
 +
  endmenu
 diff --git a/kernel/Makefile b/kernel/Makefile
-index 6da2b6f02..4e9680b04 100644
+index ac6d5b9e1..0c6f5ac94 100644
 --- a/kernel/Makefile
 +++ b/kernel/Makefile
 @@ -37,8 +37,12 @@ ifeq ($(shell grep -q "struct selinux_state " $(srctree)/security/selinux/includ
@@ -340,10 +340,10 @@ index bcdac3f0a..6f2557c97 100644
  	return ksu_queue_work(&ksu_save_work);
  }
 diff --git a/kernel/apk_sign.c b/kernel/apk_sign.c
-index c1e803d7b..876dd648a 100644
+index 51cdf0971..1c758d72e 100644
 --- a/kernel/apk_sign.c
 +++ b/kernel/apk_sign.c
-@@ -315,7 +315,7 @@ module_param_cb(ksu_debug_manager_uid, &expected_size_ops,
+@@ -363,7 +363,7 @@ module_param_cb(expected_manager_hash, &expected_hash_ops, &expected_manager_has
  
  #endif
  
