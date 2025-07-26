@@ -1,21 +1,21 @@
-From c7f6139679c365f64077ca98003006f707c8b2dc Mon Sep 17 00:00:00 2001
+From 69c1f2fb9a856732740dfcdd9d1a0dd1e348cf7d Mon Sep 17 00:00:00 2001
 From: sidex15 <24408329+sidex15@users.noreply.github.com>
-Date: Mon, 21 Jul 2025 19:06:00 +0800
+Date: Sat, 26 Jul 2025 18:54:04 +0800
 Subject: [PATCH] kernel: implement susfs v1.5.9
 
 ---
  .gitignore                |   3 +
- kernel/Kconfig            | 138 +++++++-
+ kernel/Kconfig            | 138 ++++++-
  kernel/Makefile           |  85 ++++-
  kernel/allowlist.c        |  10 +-
  kernel/apk_sign.c         |   2 +-
  kernel/apk_sign.h         |   2 +-
- kernel/core_hook.c        | 712 +++++++++++++++++++++++++++++++++++---
+ kernel/core_hook.c        | 758 ++++++++++++++++++++++++++++++++++----
  kernel/include/ksu_hook.h |   5 -
- kernel/kernel_compat.c    |  79 ++---
+ kernel/kernel_compat.c    |  79 ++--
  kernel/kernel_compat.h    |  29 +-
  kernel/ksu.c              |  30 +-
- kernel/ksud.c             | 331 +++++++-----------
+ kernel/ksud.c             | 331 +++++++----------
  kernel/ksud.h             |   5 +-
  kernel/manager.h          |   2 +-
  kernel/selinux/rules.c    |  16 +-
@@ -24,7 +24,7 @@ Subject: [PATCH] kernel: implement susfs v1.5.9
  kernel/sucompat.c         | 249 +++++++------
  kernel/throne_tracker.c   |   4 +-
  kernel/throne_tracker.h   |   2 +-
- 20 files changed, 1352 insertions(+), 471 deletions(-)
+ 20 files changed, 1375 insertions(+), 494 deletions(-)
 
 diff --git a/.gitignore b/.gitignore
 index 706fd07fa..cf9cce53a 100644
