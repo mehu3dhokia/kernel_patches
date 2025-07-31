@@ -1,18 +1,18 @@
-From cd97aad2e579c783cc62273b1136b8a1fad1735a Mon Sep 17 00:00:00 2001
+From b6c9943497f10b372f7c8e00135f8cfa3d1aef7f Mon Sep 17 00:00:00 2001
 From: sidex15 <24408329+sidex15@users.noreply.github.com>
-Date: Mon, 28 Jul 2025 16:52:50 +0800
+Date: Thu, 31 Jul 2025 19:09:25 +0800
 Subject: [PATCH] kernel: implement susfs v1.5.9
 
 ---
  .gitignore                |   3 +
  kernel/Kconfig            | 138 ++++++-
- kernel/Makefile           |  89 +++++
+ kernel/Makefile           |  91 ++++-
  kernel/allowlist.c        |  10 +-
  kernel/apk_sign.c         |   2 +-
  kernel/apk_sign.h         |   2 +-
  kernel/core_hook.c        | 758 ++++++++++++++++++++++++++++++++++----
  kernel/include/ksu_hook.h |   4 +-
- kernel/kernel_compat.c    |  47 ++-
+ kernel/kernel_compat.c    |  51 ++-
  kernel/kernel_compat.h    |  27 +-
  kernel/ksu.c              |  18 +-
  kernel/ksud.c             | 333 ++++++++---------
@@ -24,7 +24,7 @@ Subject: [PATCH] kernel: implement susfs v1.5.9
  kernel/sucompat.c         | 249 +++++++------
  kernel/throne_tracker.c   |   4 +-
  kernel/throne_tracker.h   |   2 +-
- 20 files changed, 1420 insertions(+), 408 deletions(-)
+ 20 files changed, 1421 insertions(+), 413 deletions(-)
 
 diff --git a/.gitignore b/.gitignore
 index 706fd07fa..cf9cce53a 100644
@@ -191,9 +191,18 @@ index ab6dd5c9d..31b59afdc 100644
 +
  endmenu
 diff --git a/kernel/Makefile b/kernel/Makefile
-index ac6d5b9e1..1a561aae2 100644
+index ac6d5b9e1..dbc47e68f 100644
 --- a/kernel/Makefile
 +++ b/kernel/Makefile
+@@ -19,7 +19,7 @@ obj-$(CONFIG_KSU) += kernelsu.o
+ # .git is a text file while the module is imported by 'git submodule add'.
+ ifeq ($(shell test -e $(srctree)/$(src)/../.git; echo $$?),0)
+ $(shell cd $(srctree)/$(src); /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin [ -f ../.git/shallow ] && git fetch --unshallow)
+-KSU_GIT_VERSION := $(shell cd $(srctree)/$(src); /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin git rev-list --count HEAD)
++KSU_GIT_VERSION := $(shell cd $(srctree)/$(src); /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin git rev-list --count origin/HEAD)
+ # ksu_version: major * 10000 + git version + 200 for historical reasons
+ $(eval KSU_VERSION=$(shell expr 10000 + $(KSU_GIT_VERSION) + 200))
+ $(info -- KernelSU-Next version: $(KSU_VERSION))
 @@ -37,9 +37,21 @@ ifeq ($(shell grep -q "struct selinux_state " $(srctree)/security/selinux/includ
  ccflags-y += -DKSU_COMPAT_HAS_SELINUX_STATE
  endif
@@ -1371,7 +1380,7 @@ index ea0b04d3e..a8c711fb6 100644
  // For volume button
  int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, 
 diff --git a/kernel/kernel_compat.c b/kernel/kernel_compat.c
-index db47f8eb5..6552110b3 100644
+index db47f8eb5..21190f113 100644
 --- a/kernel/kernel_compat.c
 +++ b/kernel/kernel_compat.c
 @@ -88,7 +88,9 @@ struct file *ksu_filp_open_compat(const char *filename, int flags, umode_t mode)
@@ -1394,30 +1403,32 @@ index db47f8eb5..6552110b3 100644
  	}
  	return fp;
  }
-@@ -134,19 +138,19 @@ ssize_t ksu_kernel_write_compat(struct file *p, const void *buf, size_t count,
+@@ -134,19 +138,17 @@ ssize_t ksu_kernel_write_compat(struct file *p, const void *buf, size_t count,
  #endif
  }
  
 -#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) || defined(KSU_STRNCPY_FROM_USER_NOFAULT)
-+#if defined(CONFIG_KSU_KPROBES_HOOK) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) || defined(KSU_STRNCPY_FROM_USER_NOFAULT)
++#if defined(CONFIG_KSU_KPROBES_HOOK) && ((LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) || defined(KSU_STRNCPY_FROM_USER_NOFAULT)) || LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
  long ksu_strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
  				   long count)
  {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) || defined(KSU_STRNCPY_FROM_USER_NOFAULT)
  	return strncpy_from_user_nofault(dst, unsafe_addr, count);
- }
+-}
 -#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
-+#elif defined(CONFIG_KSU_KPROBES_HOOK) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
- long ksu_strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
- 				   long count)
- {
+-long ksu_strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
+-				   long count)
+-{
++#else
  	return strncpy_from_unsafe_user(dst, unsafe_addr, count);
++#endif
  }
 -#else
 +#elif defined(CONFIG_KSU_KPROBES_HOOK)
  // Copied from: https://elixir.bootlin.com/linux/v4.9.337/source/mm/maccess.c#L201
  long ksu_strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
  				   long count)
-@@ -174,25 +178,38 @@ long ksu_strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
+@@ -174,25 +176,36 @@ long ksu_strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
  }
  #endif
  
@@ -1440,10 +1451,8 @@ index db47f8eb5..6552110b3 100644
 -	long ret = ksu_strncpy_from_user_nofault(dst, unsafe_addr, count);
 -	if (likely(ret >= 0))
 -		return ret;
-+#if defined(CONFIG_KSU_KPROBES_HOOK) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
++#if (defined(CONFIG_KSU_KPROBES_HOOK) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)) || (!defined(CONFIG_KSU_KPROBES_HOOK) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) || defined(KSU_COPY_FROM_USER_NOFAULT))
 +	return copy_from_user_nofault(dst, src, size);
-+#elif !defined(CONFIG_KSU_KPROBES_HOOK) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) || defined(KSU_COPY_FROM_USER_NOFAULT)
-+        return copy_from_user_nofault(dst, src, size);
 +#elif !defined(CONFIG_KSU_KPROBES_HOOK) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0) || defined(KSU_PROBE_USER_READ)
 +        return probe_user_read(dst, src, size);
 +#else // https://elixir.bootlin.com/linux/v5.8/source/mm/maccess.c#L205
