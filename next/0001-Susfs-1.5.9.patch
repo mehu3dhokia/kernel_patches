@@ -1,6 +1,6 @@
-From b7330b4332c48dccf0cc7477d152ddc9f8af631b Mon Sep 17 00:00:00 2001
+From 30724e29183a126f84b620411620fc1a7a57c54f Mon Sep 17 00:00:00 2001
 From: sidex15 <24408329+sidex15@users.noreply.github.com>
-Date: Mon, 11 Aug 2025 19:27:33 +0800
+Date: Wed, 13 Aug 2025 21:46:49 +0800
 Subject: [PATCH] kernel: implement susfs v1.5.9 KernelSU Next v1.0.9
 
 ---
@@ -18,13 +18,13 @@ Subject: [PATCH] kernel: implement susfs v1.5.9 KernelSU Next v1.0.9
  kernel/ksud.c             | 333 ++++++++---------
  kernel/ksud.h             |   5 +-
  kernel/manager.h          |   2 +-
- kernel/selinux/rules.c    |  17 +-
+ kernel/selinux/rules.c    |  27 +-
  kernel/selinux/selinux.c  | 102 ++++-
  kernel/selinux/selinux.h  |  24 +-
  kernel/sucompat.c         | 249 ++++++------
  kernel/throne_tracker.c   |   4 +-
  kernel/throne_tracker.h   |   2 +-
- 20 files changed, 1440 insertions(+), 413 deletions(-)
+ 20 files changed, 1446 insertions(+), 417 deletions(-)
 
 diff --git a/.gitignore b/.gitignore
 index 706fd07fa..cf9cce53a 100644
@@ -2070,9 +2070,18 @@ index be5bbced6..93fa26786 100644
  	return unlikely(ksu_manager_uid == current_uid().val);
  }
 diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
-index 38390b372..02504b644 100644
+index 38390b372..78307ea82 100644
 --- a/kernel/selinux/rules.c
 +++ b/kernel/selinux/rules.c
+@@ -24,7 +24,7 @@ static struct policydb *get_policydb(void)
+ // selinux_state does not exists before 4.19
+ #ifdef KSU_COMPAT_USE_SELINUX_STATE
+ #ifdef SELINUX_POLICY_INSTEAD_SELINUX_SS
+-	struct selinux_policy *policy = rcu_dereference(selinux_state.policy);
++	struct selinux_policy *policy = selinux_state.policy;
+ 	db = &policy->policydb;
+ #else
+ 	struct selinux_ss *ss = rcu_dereference(selinux_state.ss);
 @@ -38,11 +38,11 @@ static struct policydb *get_policydb(void)
  
  static DEFINE_MUTEX(ksu_rules);
@@ -2103,13 +2112,15 @@ index 38390b372..02504b644 100644
  	mutex_unlock(&ksu_rules);
  }
  
-@@ -228,13 +237,13 @@ static void reset_avc_cache()
+@@ -228,13 +237,15 @@ static void reset_avc_cache()
  	selinux_xfrm_notify_policyload();
  }
  
 -int handle_sepolicy(unsigned long arg3, void __user *arg4)
 +int ksu_handle_sepolicy(unsigned long arg3, void __user *arg4)
  {
++	struct policydb *db;
++
  	if (!arg4) {
  		return -1;
  	}
@@ -2119,6 +2130,27 @@ index 38390b372..02504b644 100644
  		pr_info("SELinux permissive or disabled when handle policy!\n");
  	}
  	
+@@ -291,9 +302,9 @@ int handle_sepolicy(unsigned long arg3, void __user *arg4)
+ 	subcmd = data.subcmd;
+ #endif
+ 
+-	rcu_read_lock();
++	mutex_lock(&ksu_rules);
+ 
+-	struct policydb *db = get_policydb();
++	db = get_policydb();
+ 
+ 	int ret = -1;
+ 	if (cmd == CMD_NORMAL_PERM) {
+@@ -543,7 +554,7 @@ int handle_sepolicy(unsigned long arg3, void __user *arg4)
+ 	}
+ 
+ exit:
+-	rcu_read_unlock();
++	mutex_unlock(&ksu_rules);
+ 
+ 	// only allow and xallow needs to reset avc cache, but we cannot do that because
+ 	// we are in atomic context. so we just reset it every time.
 diff --git a/kernel/selinux/selinux.c b/kernel/selinux/selinux.c
 index 4ba20b043..9597f451c 100644
 --- a/kernel/selinux/selinux.c
