@@ -1,6 +1,6 @@
-From 4768364321ec31c75464241c9e74afb07b2d6d6e Mon Sep 17 00:00:00 2001
+From a39db722eef8199c0218aa943f19ab0cb268eb1d Mon Sep 17 00:00:00 2001
 From: sidex15 <24408329+sidex15@users.noreply.github.com>
-Date: Tue, 26 Aug 2025 19:46:08 +0800
+Date: Wed, 27 Aug 2025 21:25:45 +0800
 Subject: [PATCH] kernel: implement susfs v1.5.9 KernelSU Next v1.0.9
 
 ---
