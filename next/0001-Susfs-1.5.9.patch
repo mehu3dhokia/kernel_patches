@@ -1,6 +1,6 @@
-From a39db722eef8199c0218aa943f19ab0cb268eb1d Mon Sep 17 00:00:00 2001
+From 2335b6b77dbe9934617c3e4e4b998dbf07d40279 Mon Sep 17 00:00:00 2001
 From: sidex15 <24408329+sidex15@users.noreply.github.com>
-Date: Wed, 27 Aug 2025 21:25:45 +0800
+Date: Fri, 5 Sep 2025 18:39:26 +0800
 Subject: [PATCH] kernel: implement susfs v1.5.9 KernelSU Next v1.0.9
 
 ---
@@ -15,11 +15,11 @@ Subject: [PATCH] kernel: implement susfs v1.5.9 KernelSU Next v1.0.9
  kernel/ksu.c              |  10 +
  kernel/ksud.c             | 327 ++++++++---------
  kernel/ksud.h             |   5 +-
- kernel/selinux/rules.c    |  21 +-
+ kernel/selinux/rules.c    |   9 +
  kernel/selinux/selinux.c  |  92 +++++
  kernel/selinux/selinux.h  |  12 +
- kernel/sucompat.c         | 245 +++++++------
- 15 files changed, 1395 insertions(+), 365 deletions(-)
+ kernel/sucompat.c         | 248 +++++++------
+ 15 files changed, 1390 insertions(+), 361 deletions(-)
 
 diff --git a/.gitignore b/.gitignore
 index 706fd07fa..cf9cce53a 100644
@@ -1901,6 +1901,26 @@ index cc2df243a..214c451b0 100644
 +extern int ksu_handle_pre_ksud(const char *filename);
 +
  #endif
+diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
+index c85993c5c..d5dee0790 100644
+--- a/kernel/selinux/rules.c
++++ b/kernel/selinux/rules.c
+@@ -139,6 +139,15 @@ void apply_kernelsu_rules()
+ 	ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
+ 	ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "sigkill");
+ 
++#ifdef CONFIG_KSU_SUSFS
++	// Allow umount in zygote process without installing zygisk
++	ksu_allow(db, "zygote", "labeledfs", "filesystem", "unmount");
++	susfs_set_kernel_sid();
++	susfs_set_init_sid();
++	susfs_set_ksu_sid();
++	susfs_set_zygote_sid();
++#endif
++
+ 	mutex_unlock(&ksu_rules);
+ }
+ 
 diff --git a/kernel/selinux/selinux.c b/kernel/selinux/selinux.c
 index 4ba20b043..a2e7681e4 100644
 --- a/kernel/selinux/selinux.c
@@ -2035,7 +2055,7 @@ index 07120c253..91894c8c8 100644
  
  #endif
 diff --git a/kernel/sucompat.c b/kernel/sucompat.c
-index c58d62939..3eaec4e0c 100644
+index c58d62939..d44845f48 100644
 --- a/kernel/sucompat.c
 +++ b/kernel/sucompat.c
 @@ -14,6 +14,10 @@
@@ -2334,7 +2354,17 @@ index c58d62939..3eaec4e0c 100644
  
  	return 0;
  }
-@@ -337,3 +338,41 @@ void ksu_sucompat_exit()
+@@ -329,7 +330,8 @@ void ksu_sucompat_init()
+ void ksu_sucompat_exit()
+ {
+ #ifdef CONFIG_KSU_KPROBES_HOOK
+-	for (int i = 0; i < ARRAY_SIZE(su_kps); i++) {
++	int i;
++	for (i = 0; i < ARRAY_SIZE(su_kps); i++) {
+ 		destroy_kprobe(&su_kps[i]);
+ 	}
+ #else
+@@ -337,3 +339,41 @@ void ksu_sucompat_exit()
  	pr_info("ksu_sucompat_exit: hooks disabled: execve/execveat_su, faccessat, stat, devpts\n");
  #endif
  }
