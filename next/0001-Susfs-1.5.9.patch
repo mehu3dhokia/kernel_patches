@@ -1,6 +1,6 @@
-From e8e231d26761b652b2f4c37b4a145886626a242b Mon Sep 17 00:00:00 2001
+From b5fc11d5d5481545e66019b258a39cf0b80a1f4f Mon Sep 17 00:00:00 2001
 From: sidex15 <24408329+sidex15@users.noreply.github.com>
-Date: Fri, 5 Sep 2025 21:45:55 +0800
+Date: Sat, 6 Sep 2025 19:10:03 +0800
 Subject: [PATCH] kernel: implement susfs v1.5.9 KernelSU Next v1.0.9
 
 ---
@@ -18,8 +18,8 @@ Subject: [PATCH] kernel: implement susfs v1.5.9 KernelSU Next v1.0.9
  kernel/selinux/rules.c    |   9 +
  kernel/selinux/selinux.c  |  92 +++++
  kernel/selinux/selinux.h  |  12 +
- kernel/sucompat.c         | 248 +++++++------
- 15 files changed, 1389 insertions(+), 361 deletions(-)
+ kernel/sucompat.c         | 245 +++++++------
+ 15 files changed, 1387 insertions(+), 360 deletions(-)
 
 diff --git a/.gitignore b/.gitignore
 index 706fd07fa..cf9cce53a 100644
@@ -2047,7 +2047,7 @@ index 07120c253..91894c8c8 100644
  
  #endif
 diff --git a/kernel/sucompat.c b/kernel/sucompat.c
-index c58d62939..d44845f48 100644
+index d99241183..d44845f48 100644
 --- a/kernel/sucompat.c
 +++ b/kernel/sucompat.c
 @@ -14,6 +14,10 @@
@@ -2346,7 +2346,7 @@ index c58d62939..d44845f48 100644
  
  	return 0;
  }
-@@ -337,3 +339,41 @@ void ksu_sucompat_exit()
+@@ -338,3 +339,41 @@ void ksu_sucompat_exit()
  	pr_info("ksu_sucompat_exit: hooks disabled: execve/execveat_su, faccessat, stat, devpts\n");
  #endif
  }
