@@ -2346,16 +2346,6 @@ index c58d62939..d44845f48 100644
  
  	return 0;
  }
-@@ -329,7 +330,8 @@ void ksu_sucompat_init()
- void ksu_sucompat_exit()
- {
- #ifdef CONFIG_KSU_KPROBES_HOOK
--	for (int i = 0; i < ARRAY_SIZE(su_kps); i++) {
-+	int i;
-+	for (i = 0; i < ARRAY_SIZE(su_kps); i++) {
- 		destroy_kprobe(&su_kps[i]);
- 	}
- #else
 @@ -337,3 +339,41 @@ void ksu_sucompat_exit()
  	pr_info("ksu_sucompat_exit: hooks disabled: execve/execveat_su, faccessat, stat, devpts\n");
  #endif
