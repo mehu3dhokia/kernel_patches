@@ -1,6 +1,6 @@
-From 5a8e5c31cdaea0e2f90bed98e3675eeff9290d4a Mon Sep 17 00:00:00 2001
+From 6480279c765a86a4afdf514ebfb775911e714c1d Mon Sep 17 00:00:00 2001
 From: sidex15 <24408329+sidex15@users.noreply.github.com>
-Date: Thu, 25 Sep 2025 21:32:34 +0800
+Date: Sat, 27 Sep 2025 13:31:40 +0800
 Subject: [PATCH] kernel: implement susfs v1.5.9
 
 ---
@@ -205,10 +205,10 @@ index ab6dd5c9d..847958396 100644
 +
  endmenu
 diff --git a/kernel/Makefile b/kernel/Makefile
-index ed1602f19..5d158b3b9 100644
+index e6099b158..83aee3d86 100644
 --- a/kernel/Makefile
 +++ b/kernel/Makefile
-@@ -19,7 +19,7 @@ obj-$(CONFIG_KSU) += kernelsu.o
+@@ -28,7 +28,7 @@ endif
  # .git is a text file while the module is imported by 'git submodule add'.
  ifeq ($(shell test -e $(srctree)/$(src)/../.git; echo $$?),0)
  $(shell cd $(srctree)/$(src); /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin [ -f ../.git/shallow ] && git fetch --unshallow)
@@ -217,7 +217,7 @@ index ed1602f19..5d158b3b9 100644
  # ksu_version: major * 10000 + git version + 200 for historical reasons
  $(eval KSU_VERSION=$(shell expr 10000 + $(KSU_GIT_VERSION) + 200))
  $(info -- KernelSU-Next version: $(KSU_VERSION))
-@@ -37,9 +37,21 @@ ifeq ($(shell grep -q "struct selinux_state " $(srctree)/security/selinux/includ
+@@ -46,9 +46,21 @@ ifeq ($(shell grep -q "struct selinux_state " $(srctree)/security/selinux/includ
  ccflags-y += -DKSU_COMPAT_HAS_SELINUX_STATE
  endif
  
@@ -239,7 +239,7 @@ index ed1602f19..5d158b3b9 100644
  
  ifeq ($(shell grep -q "ssize_t kernel_read" $(srctree)/fs/read_write.c; echo $$?),0)
  ccflags-y += -DKSU_KERNEL_READ
-@@ -122,4 +134,81 @@ endif
+@@ -131,4 +143,81 @@ endif
  ccflags-y += -Wno-implicit-function-declaration -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat
  ccflags-y += -Wno-declaration-after-statement -Wno-unused-function
  
@@ -398,7 +398,7 @@ index 00046a404..7eb5fbd39 100644
  	if (IS_ERR(fp)) {
  		pr_err("open %s error.\n", path);
 diff --git a/kernel/core_hook.c b/kernel/core_hook.c
-index 4f810bdc7..06c4deb2b 100644
+index a98e5f19b..1c4ff2a37 100644
 --- a/kernel/core_hook.c
 +++ b/kernel/core_hook.c
 @@ -7,6 +7,7 @@
@@ -549,7 +549,7 @@ index 4f810bdc7..06c4deb2b 100644
  		     unsigned long arg4, unsigned long arg5)
  {
  	// if success, we modify the arg5 as result!
-@@ -393,6 +474,9 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
+@@ -402,6 +483,9 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
  			if (!post_fs_data_lock) {
  				post_fs_data_lock = true;
  				pr_info("post-fs-data triggered\n");
@@ -559,7 +559,7 @@ index 4f810bdc7..06c4deb2b 100644
  				on_post_fs_data();
  			}
  			break;
-@@ -484,29 +568,391 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
+@@ -493,29 +577,391 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
  
  #ifdef CONFIG_KSU_KPROBES_HOOK
  	if (arg2 == CMD_ENABLE_SU) {
@@ -968,7 +968,7 @@ index 4f810bdc7..06c4deb2b 100644
  
  	// all other cmds are for 'root manager'
  	if (!from_manager) {
-@@ -563,28 +1009,28 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
+@@ -572,28 +1018,28 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
  	}
  #ifndef CONFIG_KSU_KPROBES_HOOK
  	if (arg2 == CMD_ENABLE_SU) {
@@ -1019,7 +1019,7 @@ index 4f810bdc7..06c4deb2b 100644
  #endif
  
  
-@@ -600,6 +1046,11 @@ static bool is_non_appuid(kuid_t uid)
+@@ -609,6 +1055,11 @@ static bool is_non_appuid(kuid_t uid)
  	return appid < FIRST_APPLICATION_UID;
  }
  
@@ -1031,7 +1031,7 @@ index 4f810bdc7..06c4deb2b 100644
  static bool should_umount(struct path *path)
  {
  	if (!path) {
-@@ -612,11 +1063,15 @@ static bool should_umount(struct path *path)
+@@ -621,11 +1072,15 @@ static bool should_umount(struct path *path)
  		return false;
  	}
  
@@ -1047,7 +1047,7 @@ index 4f810bdc7..06c4deb2b 100644
  }
  
  static int ksu_umount_mnt(struct path *path, int flags)
-@@ -629,7 +1084,11 @@ static int ksu_umount_mnt(struct path *path, int flags)
+@@ -638,7 +1093,11 @@ static int ksu_umount_mnt(struct path *path, int flags)
  #endif
  }
  
@@ -1059,7 +1059,7 @@ index 4f810bdc7..06c4deb2b 100644
  {
  	struct path path;
  	int err = kern_path(mnt, 0, &path);
-@@ -649,13 +1108,36 @@ static void try_umount(const char *mnt, bool check_mnt, int flags)
+@@ -658,13 +1117,36 @@ static void try_umount(const char *mnt, bool check_mnt, int flags)
  		return;
  	}
  
@@ -1097,7 +1097,7 @@ index 4f810bdc7..06c4deb2b 100644
  {
  	// this hook is used for umounting overlayfs for some uid, if there isn't any module mounted, just ignore it!
  	if (!ksu_module_mounted) {
-@@ -674,6 +1156,21 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
+@@ -683,6 +1165,21 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
  		return 0;
  	}
  
@@ -1119,7 +1119,7 @@ index 4f810bdc7..06c4deb2b 100644
  	if (is_non_appuid(new_uid)) {
  #ifdef CONFIG_KSU_DEBUG
  		pr_info("handle setuid ignore non application uid: %d\n", new_uid.val);
-@@ -686,6 +1183,15 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
+@@ -695,6 +1192,15 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
  #ifdef CONFIG_KSU_DEBUG
  		pr_info("handle umount for unsupported application uid: %d\n", new_uid.val);
  #endif
@@ -1135,7 +1135,7 @@ index 4f810bdc7..06c4deb2b 100644
  		goto do_umount;
  	}
  
-@@ -708,7 +1214,11 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
+@@ -717,7 +1223,11 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
  	// check old process's selinux context, if it is not zygote, ignore it!
  	// because some su apps may setuid to untrusted_app but they are in global mount namespace
  	// when we umount for such process, that is a disaster!
@@ -1147,7 +1147,7 @@ index 4f810bdc7..06c4deb2b 100644
  		pr_info("handle umount ignore non zygote child: %d\n",
  			current->pid);
  		return 0;
-@@ -719,6 +1229,19 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
+@@ -728,6 +1238,19 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
  		current->pid);
  #endif
  
@@ -1167,7 +1167,7 @@ index 4f810bdc7..06c4deb2b 100644
  	// fixme: use `collect_mounts` and `iterate_mount` to iterate all mountpoint and
  	// filter the mountpoint whose target is `/data/adb`
  	try_umount("/odm", true, 0);
-@@ -738,6 +1261,7 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
+@@ -747,6 +1270,7 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
  	// try umount lsposed dex2oat bins
  	try_umount("/apex/com.android.art/bin/dex2oat64", false, MNT_DETACH);
  	try_umount("/apex/com.android.art/bin/dex2oat32", false, MNT_DETACH);
@@ -1175,7 +1175,7 @@ index 4f810bdc7..06c4deb2b 100644
  
  	return 0;
  }
-@@ -811,14 +1335,17 @@ __maybe_unused int ksu_kprobe_exit(void)
+@@ -820,14 +1344,17 @@ __maybe_unused int ksu_kprobe_exit(void)
  	return 0;
  }
  
@@ -1198,7 +1198,7 @@ index 4f810bdc7..06c4deb2b 100644
  		ksu_handle_devpts(inode);
  	}
  	return 0;
-@@ -826,7 +1353,7 @@ static int ksu_inode_permission(struct inode *inode, int mask)
+@@ -835,7 +1362,7 @@ static int ksu_inode_permission(struct inode *inode, int mask)
  
  // kernel 4.9 and older
  #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) || defined(CONFIG_IS_HW_HISI) || defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
@@ -1207,7 +1207,7 @@ index 4f810bdc7..06c4deb2b 100644
  			      unsigned perm)
  {
  	if (init_session_keyring != NULL) {
-@@ -842,6 +1369,48 @@ int ksu_key_permission(key_ref_t key_ref, const struct cred *cred,
+@@ -851,6 +1378,48 @@ int ksu_key_permission(key_ref_t key_ref, const struct cred *cred,
  }
  #endif
  
@@ -1256,7 +1256,7 @@ index 4f810bdc7..06c4deb2b 100644
  #ifdef CONFIG_KSU_LSM_SECURITY_HOOKS
  static int ksu_task_prctl(int option, unsigned long arg2, unsigned long arg3,
  			  unsigned long arg4, unsigned long arg5)
-@@ -864,6 +1433,7 @@ static int ksu_task_fix_setuid(struct cred *new, const struct cred *old,
+@@ -873,6 +1442,7 @@ static int ksu_task_fix_setuid(struct cred *new, const struct cred *old,
  
  #ifndef MODULE
  static struct security_hook_list ksu_hooks[] = {
