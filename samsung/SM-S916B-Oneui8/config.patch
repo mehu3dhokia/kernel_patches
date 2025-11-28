@@ -1,23 +1,13 @@
---- a/arch/arm64/configs/a56_defconfig
-+++ b/arch/arm64/configs/a56_defconfig
-@@ -7049,7 +7049,7 @@
- CONFIG_GAF_V6=y
- CONFIG_DEFAULT_SECURITY_SELINUX=y
- # CONFIG_DEFAULT_SECURITY_DAC is not set
--CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,bpf"
-+CONFIG_LSM="landlock,lockdown,baseband_guard,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,bpf"
+--- a/arch/arm64/configs/gki_defconfig
++++ b/arch/arm64/configs/gki_defconfig
+@@ -961,4 +961,42 @@
  
- #
- # Kernel hardening options
-@@ -7820,3 +7820,42 @@
- #
- # end of Rust hacking
- # end of Kernel hacking
-+
+ CONFIG_SECURITY_KUMIHO=y
+ 
 +# KSU NEXT
 +CONFIG_KSU=y
 +CONFIG_KSU_KPROBES_HOOK=n
-+
+ 
 +# Mountify Support
 +CONFIG_TMPFS_XATTR=y
 +CONFIG_TMPFS_POSIX_ACL=y
@@ -52,3 +42,4 @@
 +
 +# add baseband guard
 +CONFIG_BBG=y
++
