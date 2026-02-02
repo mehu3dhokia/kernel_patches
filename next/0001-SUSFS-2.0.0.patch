@@ -1,6 +1,6 @@
-From 1244bdd258610cf7a00416e5d4e31d952b67dc90 Mon Sep 17 00:00:00 2001
+From 8b87bdf482c165de9db0807a6b3e77a50a3e36f9 Mon Sep 17 00:00:00 2001
 From: pershoot <190600+pershoot@users.noreply.github.com>
-Date: Wed, 21 Jan 2026 04:00:00 -0500
+Date: Mon, 2 Feb 2026 05:00:00 -0500
 Subject: [PATCH] kernel (susfs (v2.0.0)): Introduce SuSFS
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -29,6 +29,7 @@ Date:   Mon Dec 15 20:03:01 2025 +0800
  'selinux: Cache SID lookups for domain checks'
  'kernel: ksud: Refine rc injection'
  'kernel: supercalls: expose spoof uname function to userspace'
+ 'kernel: Fix setup_selinux using __task_cred directly'
 
 -https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
 
@@ -146,23 +147,40 @@ Author: simonpunk <simonpunk2016@gmail.com>
 Date:   Wed Jan 21 12:56:39 2026 +0800
 
 -https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
+
+kernel & KernelSU: Replaced susfs_is_boot_completed_triggered with susfs_is_sdcard_android_data_decrypted
+
+Author: simonpunk <simonpunk2016@gmail.com>
+Date:   Mon Feb 2 14:13:08 2026 +0800
+
+-Sync with the official KernelSU main repo
+
+- 1st scene: There will be still some processes spawned by init after /data is decrypted, these processes will still go through the sucompat checks which takes more CPU cycle.
+
+  2nd scene: There can be some mounts mounted after /data is decrypted like yt rvx module, these mounts will leave a mnt_id gap or mnt_group_id gap if it is not a bind mount.
+
+  So to mark no sucompat checks for all init spawned processes, and to capture the ksu mounts and leave no mnt_id/mnt_group_id gaps as much as possible, here we start a kthread after boot-completed stage to keep monitoring the accessbility of path /sdcard/Android/data in loop per 5 seconds with maximum 60 attempts. When it is accessible, we sleep for 5 more seconds just in case there are still some modules mounting stuff. On the contrary, the path will still be deemed as accessible after 60 failed attempts just to prevent infinite loop
+
+- For upstream commit, see https://github.com/tiann/KernelSU/commit/35d81627402fe9c4c056aa2769d60ac93627bca2
+
+-https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
 ---
  kernel/Kbuild            |  11 ++-
  kernel/Kconfig           |  91 +++++++++++++++++++++-
  kernel/allowlist.c       |   4 +
  kernel/app_profile.c     |   6 ++
  kernel/kernel_umount.c   |   3 +
- kernel/ksu.c             |  21 +++++
+ kernel/ksu.c             |  21 ++++++
  kernel/ksud.c            |  65 ++++++++++++++++
  kernel/ksud.h            |  19 +++++
  kernel/selinux/rules.c   |  11 ++-
- kernel/selinux/selinux.c |  96 +++++++++++++++++++++++
+ kernel/selinux/selinux.c |  96 ++++++++++++++++++++++++
  kernel/selinux/selinux.h |  13 ++++
- kernel/setuid_hook.c     | 100 ++++++++++++++++++++++++
- kernel/sucompat.c        | 151 ++++++++++++++++++++++++++++++++++++
+ kernel/setuid_hook.c     | 100 +++++++++++++++++++++++++
+ kernel/sucompat.c        | 151 +++++++++++++++++++++++++++++++++++++
  kernel/sucompat.h        |   4 +
- kernel/supercalls.c      | 162 +++++++++++++++++++++++++++++++++++++++
- 15 files changed, 754 insertions(+), 3 deletions(-)
+ kernel/supercalls.c      | 158 +++++++++++++++++++++++++++++++++++++++
+ 15 files changed, 750 insertions(+), 3 deletions(-)
 
 diff --git a/kernel/Kbuild b/kernel/Kbuild
 index cfcc9291cf..942386d76b 100644
@@ -324,7 +342,7 @@ index 01459e8f5d..ae066d70ea 100644
  
  	return result;
 diff --git a/kernel/app_profile.c b/kernel/app_profile.c
-index 7bfedeacb7..a24006eabb 100644
+index 6662aeebdb..f1758944f9 100644
 --- a/kernel/app_profile.c
 +++ b/kernel/app_profile.c
 @@ -13,7 +13,9 @@
@@ -349,9 +367,9 @@ index 7bfedeacb7..a24006eabb 100644
      cred = prepare_creds();
      if (!cred) {
 @@ -153,9 +157,11 @@ void escape_with_root_profile(void)
+ 
      disable_seccomp();
  
-     setup_selinux(profile->selinux_domain);
 +#ifndef CONFIG_KSU_SUSFS
      for_each_thread (p, t) {
          ksu_set_task_tracepoint_flag(t);
@@ -673,7 +691,7 @@ index 9c6b867415..13d4b60039 100644
 \ No newline at end of file
 +}
 diff --git a/kernel/selinux/selinux.c b/kernel/selinux/selinux.c
-index ff66c1f225..7c14adfb74 100644
+index b477d59ce7..1346593de2 100644
 --- a/kernel/selinux/selinux.c
 +++ b/kernel/selinux/selinux.c
 @@ -207,3 +207,99 @@ bool is_init(const struct cred *cred)
@@ -777,7 +795,7 @@ index ff66c1f225..7c14adfb74 100644
 +}
 +#endif // #ifdef CONFIG_KSU_SUSFS
 diff --git a/kernel/selinux/selinux.h b/kernel/selinux/selinux.h
-index 734196fe73..562ae0d4ff 100644
+index a4ab96e843..7bec5ed4d9 100644
 --- a/kernel/selinux/selinux.h
 +++ b/kernel/selinux/selinux.h
 @@ -36,4 +36,17 @@ int handle_sepolicy(unsigned long arg3, void __user *arg4);
@@ -1125,7 +1143,7 @@ index b60cbde0a5..1a4ee87909 100644
                                 void *__never_use_argv, void *__never_use_envp,
                                 int *__never_use_flags);
 diff --git a/kernel/supercalls.c b/kernel/supercalls.c
-index 0e75cb6186..1f11370059 100644
+index 0e75cb6186..98bc82fba7 100644
 --- a/kernel/supercalls.c
 +++ b/kernel/supercalls.c
 @@ -12,6 +12,10 @@
@@ -1139,31 +1157,27 @@ index 0e75cb6186..1f11370059 100644
  
  #include "supercalls.h"
  #include "arch.h"
-@@ -24,7 +28,13 @@
+@@ -24,7 +28,9 @@
  #include "manager.h"
  #include "selinux/selinux.h"
  #include "file_wrapper.h"
 +#ifndef CONFIG_KSU_SUSFS
  #include "syscall_hook_manager.h"
 +#endif // #ifndef CONFIG_KSU_SUSFS
-+
-+#ifdef CONFIG_KSU_SUSFS
-+bool susfs_is_boot_completed_triggered __read_mostly = false;
-+#endif // #ifdef CONFIG_KSU_SUSFS
  
  #include "tiny_sulog.c"
  
-@@ -118,6 +128,9 @@ static int do_report_event(void __user *arg)
+@@ -118,6 +124,9 @@ static int do_report_event(void __user *arg)
  			boot_complete_lock = true;
  			pr_info("boot_complete triggered\n");
  			on_boot_completed();
-+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+			susfs_is_boot_completed_triggered = true;
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++#ifdef CONFIG_KSU_SUSFS
++			susfs_start_sdcard_monitor_fn();
++#endif // #ifdef CONFIG_KSU_SUSFS
  		}
  		break;
  	}
-@@ -369,6 +382,7 @@ static int do_manage_mark(void __user *arg)
+@@ -369,6 +378,7 @@ static int do_manage_mark(void __user *arg)
  
  	switch (cmd.operation) {
  	case KSU_MARK_GET: {
@@ -1171,7 +1185,7 @@ index 0e75cb6186..1f11370059 100644
  		// Get task mark status
  		ret = ksu_get_task_mark(cmd.pid);
  		if (ret < 0) {
-@@ -377,8 +391,19 @@ static int do_manage_mark(void __user *arg)
+@@ -377,8 +387,19 @@ static int do_manage_mark(void __user *arg)
  		}
  		cmd.result = (u32)ret;
  		break;
@@ -1191,7 +1205,7 @@ index 0e75cb6186..1f11370059 100644
  		if (cmd.pid == 0) {
  			ksu_mark_all_process();
  		} else {
-@@ -389,9 +414,15 @@ static int do_manage_mark(void __user *arg)
+@@ -389,9 +410,15 @@ static int do_manage_mark(void __user *arg)
  				return ret;
  			}
  		}
@@ -1207,7 +1221,7 @@ index 0e75cb6186..1f11370059 100644
  		if (cmd.pid == 0) {
  			ksu_unmark_all_process();
  		} else {
-@@ -402,11 +433,20 @@ static int do_manage_mark(void __user *arg)
+@@ -402,11 +429,20 @@ static int do_manage_mark(void __user *arg)
  				return ret;
  			}
  		}
@@ -1228,7 +1242,7 @@ index 0e75cb6186..1f11370059 100644
  		break;
  	}
  	default: {
-@@ -750,6 +790,7 @@ static void ksu_install_fd_tw_func(struct callback_head *cb)
+@@ -750,6 +786,7 @@ static void ksu_install_fd_tw_func(struct callback_head *cb)
  	kfree(tw);
  }
  
@@ -1236,7 +1250,7 @@ index 0e75cb6186..1f11370059 100644
  static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
  {
  	struct pt_regs *real_regs = PT_REAL_REGS(regs);
-@@ -896,6 +937,121 @@ static struct kprobe reboot_kp = {
+@@ -896,6 +933,121 @@ static struct kprobe reboot_kp = {
  	.symbol_name = REBOOT_SYMBOL,
  	.pre_handler = reboot_handler_pre,
  };
@@ -1358,7 +1372,7 @@ index 0e75cb6186..1f11370059 100644
  
  void ksu_supercalls_init(void)
  {
-@@ -907,19 +1063,25 @@ void ksu_supercalls_init(void)
+@@ -907,19 +1059,25 @@ void ksu_supercalls_init(void)
                  ksu_ioctl_handlers[i].cmd);
      }
  
