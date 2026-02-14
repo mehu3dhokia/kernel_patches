@@ -1,6 +1,6 @@
-From 8b87bdf482c165de9db0807a6b3e77a50a3e36f9 Mon Sep 17 00:00:00 2001
+From 76caf8205dd1a94e84a868c5366b0b7306439913 Mon Sep 17 00:00:00 2001
 From: pershoot <190600+pershoot@users.noreply.github.com>
-Date: Mon, 2 Feb 2026 05:00:00 -0500
+Date: Fri, 13 Feb 2026 13:00:00 -0500
 Subject: [PATCH] kernel (susfs (v2.0.0)): Introduce SuSFS
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -148,7 +148,7 @@ Date:   Wed Jan 21 12:56:39 2026 +0800
 
 -https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
 
-kernel & KernelSU: Replaced susfs_is_boot_completed_triggered with susfs_is_sdcard_android_data_decrypted
+kernel & KernelSU (susfs (v2.0.0)): Replaced susfs_is_boot_completed_triggered with susfs_is_sdcard_android_data_decrypted
 
 Author: simonpunk <simonpunk2016@gmail.com>
 Date:   Mon Feb 2 14:13:08 2026 +0800
@@ -162,6 +162,34 @@ Date:   Mon Feb 2 14:13:08 2026 +0800
   So to mark no sucompat checks for all init spawned processes, and to capture the ksu mounts and leave no mnt_id/mnt_group_id gaps as much as possible, here we start a kthread after boot-completed stage to keep monitoring the accessbility of path /sdcard/Android/data in loop per 5 seconds with maximum 60 attempts. When it is accessible, we sleep for 5 more seconds just in case there are still some modules mounting stuff. On the contrary, the path will still be deemed as accessible after 60 failed attempts just to prevent infinite loop
 
 - For upstream commit, see https://github.com/tiann/KernelSU/commit/35d81627402fe9c4c056aa2769d60ac93627bca2
+
+-https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
+
+kernel (susfs (v2.0.0)): Various fixes for SUS_PATH and SUS_MOUNT
+
+-plus overall code improvement and optimization
+
+Author: simonpunk <simonpunk2016@gmail.com>
+Date:   Sat Feb 14 01:06:42 2026 +0800
+
+- Remove the need of flagging /sdcard or /sdcard/Android/data, so we can just do "ksu_susfs add_sus_path </sdcard/TWRP|/sdcard/Android/data/com.example.myapp" for example. To completely prevent unicode exploit users can pick up the patches from here if needed: https://github.com/WildKernels/kernel_patches/blob/main/common/unicode_bypass_fix_6.1%2B.patch / https://github.com/WildKernels/kernel_patches/blob/main/common/unicode_bypass_fix_6.1-.patch
+
+- To deal with FUSE based path, first we check for the inode->i_sb->s_magic, if its magic is FUSE, then we use get_fuse_inode(inode) API to retrieve its fuse inode and flag SUS_PATH on fi->i_mapping->flags.
+
+- Remove overall overheads as we can now get rid of linked list to check for sus path in "/sdcard" and "/sdcard/Android/data", however, for add_sus_path_loop we still need it. But we can consider to use userspace inotify to watch specific paths and pass list of paths to add_sus_path when needed, that will reduce the overheads of iterating the SUS_PATH_LOOP linked list every time zygote spawns a new process.
+
+- Apply only on proc with uid >= 10000 and marked umounted.
+
+- Fixed deadlock and race issues, see 4803afa7 and 068ebeb3
+
+- d_lookup(), __d_lookup() and __d_lookup_rcu() will just return NULL if no dcache is found, so we can just dput() the dentry and set it to NULL, no need to do extra lookup with fake qstr.
+
+- Use d_lookup_done(dentry) to make sure "dentry->d_flags &= ~DCACHE_PAR_LOOKUP" and "dentry->d_wait = NULL" if it is found sus, and re-use DECLARE_WAIT_QUEUE_HEAD_ONSTACK(wq);
+
+- Fix several race issues by using proper locks:
+  down_read(&namespace_sem); // needed when manipulating mnt_namespace
+  lock_ns_list(mnt_ns); // needed when traversing mnt_ns->list
+  lock_mount_hash(); // needed when modifying mount
 
 -https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
 ---
@@ -183,7 +211,7 @@ Date:   Mon Feb 2 14:13:08 2026 +0800
  15 files changed, 750 insertions(+), 3 deletions(-)
 
 diff --git a/kernel/Kbuild b/kernel/Kbuild
-index cfcc9291cf..942386d76b 100644
+index 690b62a9cd..62de832010 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
 @@ -3,7 +3,6 @@ kernelsu-objs += allowlist.o
@@ -194,7 +222,7 @@ index cfcc9291cf..942386d76b 100644
  kernelsu-objs += throne_tracker.o
  kernelsu-objs += pkg_observer.o
  kernelsu-objs += setuid_hook.o
-@@ -92,4 +91,14 @@ ccflags-y += -DEXPECTED_MANAGER_HASH=\"$(KSU_NEXT_MANAGER_HASH)\"
+@@ -90,4 +89,14 @@ ccflags-y += -DEXPECTED_MANAGER_HASH=\"$(KSU_NEXT_MANAGER_HASH)\"
  ccflags-y += -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat -Wno-missing-prototypes
  ccflags-y += -Wno-declaration-after-statement -Wno-unused-function -Wno-unused-variable
  
@@ -210,7 +238,7 @@ index cfcc9291cf..942386d76b 100644
 +
  # Keep a new line here!! Because someone may append config
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index cc4dbb3a10..082d9eb30b 100644
+index cc4dbb3a10..132fc51b94 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
 @@ -2,7 +2,6 @@ menu "KernelSU"
@@ -237,7 +265,7 @@ index cc4dbb3a10..082d9eb30b 100644
 +config KSU_SUSFS_SUS_PATH
 +	bool "Enable to hide suspicious path (NOT recommended)"
 +	depends on KSU_SUSFS
-+	default y
++	default n
 +	help
 +	  - Allow hiding the user-defined path and all its sub-paths from various system calls.
 +	  - Includes temp fix for the leaks of app path in /sdcard/Android/data directory.
@@ -257,7 +285,7 @@ index cc4dbb3a10..082d9eb30b 100644
 +config KSU_SUSFS_SUS_KSTAT
 +	bool "Enable to spoof suspicious kstat"
 +	depends on KSU_SUSFS
-+	default y
++	default n
 +	help
 +	  - Allow spoofing the kstat of user-defined file/directory.
 +	  - Effective only on zygote spawned user app process.
@@ -296,7 +324,7 @@ index cc4dbb3a10..082d9eb30b 100644
 +config KSU_SUSFS_OPEN_REDIRECT
 +	bool "Enable to redirect a path to be opened with another path (experimental)"
 +	depends on KSU_SUSFS
-+	default y
++	default n
 +	help
 +	  - Allow redirecting a target path to be opened with another user-defined path.
 +	  - Effective only on processes with uid < 2000.
@@ -1143,7 +1171,7 @@ index b60cbde0a5..1a4ee87909 100644
                                 void *__never_use_argv, void *__never_use_envp,
                                 int *__never_use_flags);
 diff --git a/kernel/supercalls.c b/kernel/supercalls.c
-index 0e75cb6186..98bc82fba7 100644
+index 76a2a4c11d..91c64ca7e6 100644
 --- a/kernel/supercalls.c
 +++ b/kernel/supercalls.c
 @@ -12,6 +12,10 @@
