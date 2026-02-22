@@ -1,4 +1,4 @@
-From 76caf8205dd1a94e84a868c5366b0b7306439913 Mon Sep 17 00:00:00 2001
+From 350524a52146402673704e07adb527a19634915c Mon Sep 17 00:00:00 2001
 From: pershoot <190600+pershoot@users.noreply.github.com>
 Date: Fri, 13 Feb 2026 13:00:00 -0500
 Subject: [PATCH] kernel (susfs (v2.0.0)): Introduce SuSFS
