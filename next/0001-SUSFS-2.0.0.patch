@@ -1,6 +1,6 @@
-From 2fae51d922ea71ca42f2b0286da29ef75efb0bea Mon Sep 17 00:00:00 2001
+From a9a4d07710cf36a8bb6b980cb0bf0d0894a29abb Mon Sep 17 00:00:00 2001
 From: pershoot <190600+pershoot@users.noreply.github.com>
-Date: Sun, 1 Mar 2026 05:00:00 -0500
+Date: Sat, 7 Mar 2026 22:30:00 -0500
 Subject: [PATCH] kernel (susfs (v2.0.0)): Introduce SuSFS
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -219,22 +219,54 @@ Date:   Sun Feb 22 02:59:13 2026 +0800
 - Add susfs_is_current_proc_umounted_app(), used to check if current proc is marked umounted and current uid >= 10000.
 
 -https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
+
+KernelSU (susfs (v2.0.0)): Fix original flow not executing for ksu_handle_sys_reboot()
+
+-if magigc2 does not matched with the magic of KSU or susfs; Synced with official KernelSU main repo
+
+Author: simonpunk <simonpunk2016@gmail.com>
+Date:   Wed Mar 4 17:04:33 2026 +0800
+
+ ## Bug fix ##
+- One of the user reported that the ksu_handle_sys_reboot() can cause reboot with KSU Next but not with official KSU, and the related fix commmit is here: https://github.com/Evolution-X-Devices/kernel_xiaomi_sm8450/commit/0eeab5ab5e78b34f787f3e05268c4a55036420c0, tho I do not know why it causes the issue with some KSU Next users but indeed there are some bugs with the returned value as it may not resume the original flow and return directly. If magic2 does not match with SUSFS_MAGIC or KSU_INSTALL_MAGIC2, or magic2 matches with SUSFS_MAGIC but none of the susfs cmd is matched, then we should return a non-zero value like -EINVAL so that it can continue with the original flow.
+
+ ## Upstream ##
+- See https://github.com/tiann/KernelSU/commit/28fedfa1b3e739c1fb5da44309f32ecc99e85d26
+
+-https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
+
+kernel / manager: Amend hook mode for susfs
+
+Author: pershoot <190600+pershoot@users.noreply.github.com>
+Date:   Thu Mar 5 16:05:50 2026 -0500
+
+KernelSU (susfs (v2.0.0)): Fix susfs_run_sus_path_loop() not executing when kernel umount is disabled
+
+Author: simonpunk <simonpunk2016@gmail.com>
+Date:   Sun Mar 8 11:10:29 2026 +0800
+
+- Since the susfs_run_sus_path_loop() is placed in umount_tw_func(), but if ksu_module_mounted or ksu_kernel_umount_enabled is false, then the function will not be executed, so here we just add another new taskwork execlusive for all extra susfs functions that need to be executed after ksu_handle_umount()
+
+-https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
 ---
- kernel/Kbuild            |  11 ++-
- kernel/Kconfig           |  91 +++++++++++++++++++++-
- kernel/app_profile.c     |   6 ++
- kernel/kernel_umount.c   |  12 +++
- kernel/ksu.c             |  21 ++++++
- kernel/ksud.c            |  65 ++++++++++++++++
- kernel/ksud.h            |  19 +++++
- kernel/selinux/rules.c   |  11 ++-
- kernel/selinux/selinux.c |  96 ++++++++++++++++++++++++
- kernel/selinux/selinux.h |  13 ++++
- kernel/setuid_hook.c     |  85 +++++++++++++++++++++
- kernel/sucompat.c        | 151 +++++++++++++++++++++++++++++++++++++
- kernel/sucompat.h        |   4 +
- kernel/supercalls.c      | 158 +++++++++++++++++++++++++++++++++++++++
- 14 files changed, 740 insertions(+), 3 deletions(-)
+ kernel/Kbuild                                 |  11 +-
+ kernel/Kconfig                                |  91 +++++++++-
+ kernel/app_profile.c                          |   6 +
+ kernel/kernel_umount.c                        |   3 +
+ kernel/ksu.c                                  |  21 +++
+ kernel/ksud.c                                 |  65 +++++++
+ kernel/ksud.h                                 |  19 ++
+ kernel/selinux/rules.c                        |  11 +-
+ kernel/selinux/selinux.c                      |  96 +++++++++++
+ kernel/selinux/selinux.h                      |  13 ++
+ kernel/setuid_hook.c                          | 127 ++++++++++++++
+ kernel/sucompat.c                             | 151 ++++++++++++++++
+ kernel/sucompat.h                             |   4 +
+ kernel/supercalls.c                           | 162 +++++++++++++++++-
+ .../java/com/rifsxd/ksunext/ui/screen/Home.kt |   2 +-
+ userspace/ksud/bin/aarch64/susfsd             | Bin 0 -> 6064 bytes
+ 16 files changed, 777 insertions(+), 5 deletions(-)
+ create mode 100755 userspace/ksud/bin/aarch64/susfsd
 
 diff --git a/kernel/Kbuild b/kernel/Kbuild
 index 690b62a9cd..62de832010 100644
@@ -408,33 +440,10 @@ index f544dd8de4..e592bb45ec 100644
      setup_mount_ns(profile.namespaces);
  }
 diff --git a/kernel/kernel_umount.c b/kernel/kernel_umount.c
-index 2087e67187..4c93b62727 100644
+index 2087e67187..6bfc733729 100644
 --- a/kernel/kernel_umount.c
 +++ b/kernel/kernel_umount.c
-@@ -72,6 +72,10 @@ struct umount_tw {
- 	struct callback_head cb;
- };
- 
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+extern void susfs_run_sus_path_loop(void);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+
- static void umount_tw_func(struct callback_head *cb)
- {
- 	struct umount_tw *tw = container_of(cb, struct umount_tw, cb);
-@@ -86,6 +90,11 @@ static void umount_tw_func(struct callback_head *cb)
-     }
-     up_read(&mount_list_lock);
- 
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+    // susfs_run_sus_path_loop() runs here with ksu_cred so that it can reach all the paths
-+    susfs_run_sus_path_loop();
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+
- 	revert_creds(saved);
- 
- 	kfree(tw);
-@@ -108,6 +117,7 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -108,6 +108,7 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
  		return 0;
  	}
  
@@ -442,7 +451,7 @@ index 2087e67187..4c93b62727 100644
      // There are 5 scenarios:
      // 1. Normal app: zygote -> appuid
      // 2. Isolated process forked from zygote: zygote -> isolated_process
-@@ -131,6 +141,8 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -131,6 +132,8 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
  		pr_info("handle umount ignore non zygote child: %d\n", current->pid);
  		return 0;
  	}
@@ -869,7 +878,7 @@ index a4ab96e843..7bec5ed4d9 100644
 +
  #endif
 diff --git a/kernel/setuid_hook.c b/kernel/setuid_hook.c
-index 849947c1a2..618a650161 100644
+index 849947c1a2..8bb0ea27e6 100644
 --- a/kernel/setuid_hook.c
 +++ b/kernel/setuid_hook.c
 @@ -11,6 +11,9 @@
@@ -882,7 +891,7 @@ index 849947c1a2..618a650161 100644
  
  #include "allowlist.h"
  #include "setuid_hook.h"
-@@ -19,15 +22,34 @@
+@@ -19,15 +22,74 @@
  #include "selinux/selinux.h"
  #include "seccomp_cache.h"
  #include "supercalls.h"
@@ -905,6 +914,46 @@ index 849947c1a2..618a650161 100644
 +}
 +
 +extern u32 susfs_zygote_sid;
++extern struct cred *ksu_cred;
++
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++extern void susfs_run_sus_path_loop(void);
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
++
++struct susfs_handle_setuid_tw {
++    struct callback_head cb;
++};
++
++static void susfs_handle_setuid_tw_func(struct callback_head *cb)
++{
++    struct susfs_handle_setuid_tw *tw = container_of(cb, struct susfs_handle_setuid_tw, cb);
++    const struct cred *saved = override_creds(ksu_cred);
++
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++    susfs_run_sus_path_loop();
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
++
++    revert_creds(saved);
++    kfree(tw);
++}
++
++static void ksu_handle_extra_susfs_work(void)
++{
++    struct susfs_handle_setuid_tw *tw = kzalloc(sizeof(*tw), GFP_ATOMIC);
++
++    if (!tw) {
++        pr_err("susfs: No enough memory\n");
++        return;
++    }
++
++    tw->cb.func = susfs_handle_setuid_tw_func;
++
++    int err = task_work_add(current, &tw->cb, TWA_RESUME);
++    if (err) {
++        kfree(tw);
++        pr_err("susfs: Failed adding task_work 'susfs_handle_setuid_tw', err: %d\n", err);
++    }
++}
 +#endif // #ifdef CONFIG_KSU_SUSFS
 +
  static void ksu_install_manager_fd_tw_func(struct callback_head *cb)
@@ -917,7 +966,7 @@ index 849947c1a2..618a650161 100644
  int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
  {
      // we rely on the fact that zygote always call setresuid(3) with same uids
-@@ -72,6 +94,69 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+@@ -72,6 +134,71 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
  
      return 0;
  }
@@ -978,6 +1027,8 @@ index 849947c1a2..618a650161 100644
 +do_umount:
 +    // Handle kernel umount
 +    ksu_handle_umount(old_uid, new_uid);
++
++    ksu_handle_extra_susfs_work();
 +
 +    susfs_set_current_proc_umounted();
 +
@@ -1180,7 +1231,7 @@ index b60cbde0a5..1a4ee87909 100644
                                 void *__never_use_argv, void *__never_use_envp,
                                 int *__never_use_flags);
 diff --git a/kernel/supercalls.c b/kernel/supercalls.c
-index e359f72327..45ff4ecb4d 100644
+index e359f72327..7744ead78b 100644
 --- a/kernel/supercalls.c
 +++ b/kernel/supercalls.c
 @@ -12,6 +12,10 @@
@@ -1279,6 +1330,15 @@ index e359f72327..45ff4ecb4d 100644
  		break;
  	}
  	default: {
+@@ -489,7 +525,7 @@ static int do_get_hook_mode(void __user *arg)
+ {
+ 	struct ksu_get_hook_mode_cmd cmd = {0};
+ 
+-	strscpy(cmd.mode, "Kprobes", sizeof(cmd.mode));
++	strscpy(cmd.mode, "Inline", sizeof(cmd.mode));
+ 
+ 	if (copy_to_user(arg, &cmd, sizeof(cmd))) {
+ 		pr_err("get_hook_mode: copy_to_user failed\n");
 @@ -821,6 +857,7 @@ static void ksu_install_fd_tw_func(struct callback_head *cb)
  	kfree(tw);
  }
@@ -1287,7 +1347,7 @@ index e359f72327..45ff4ecb4d 100644
  static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
  {
  	struct pt_regs *real_regs = PT_REAL_REGS(regs);
-@@ -967,6 +1004,121 @@ static struct kprobe reboot_kp = {
+@@ -967,6 +1004,123 @@ static struct kprobe reboot_kp = {
  	.symbol_name = REBOOT_SYMBOL,
  	.pre_handler = reboot_handler_pre,
  };
@@ -1384,7 +1444,7 @@ index e359f72327..45ff4ecb4d 100644
 +			susfs_show_version(arg);
 +			return 0;
 +		}
-+		return 0;
++		return -EINVAL;
 +	}
 +
 +	// Check if this is a request to install KSU fd
@@ -1402,14 +1462,16 @@ index e359f72327..45ff4ecb4d 100644
 +			kfree(tw);
 +			pr_warn("install fd add task_work failed\n");
 +		}
++		return 0;
 +	}
-+	return 0;
++
++	return -EINVAL;
 +}
 +#endif // #ifndef CONFIG_KSU_SUSFS
  
  void ksu_supercalls_init(void)
  {
-@@ -978,19 +1130,25 @@ void ksu_supercalls_init(void)
+@@ -978,19 +1132,25 @@ void ksu_supercalls_init(void)
                  ksu_ioctl_handlers[i].cmd);
      }
  
@@ -1435,3 +1497,73 @@ index e359f72327..45ff4ecb4d 100644
  }
  
  // IOCTL dispatcher
+diff --git a/manager/app/src/main/java/com/rifsxd/ksunext/ui/screen/Home.kt b/manager/app/src/main/java/com/rifsxd/ksunext/ui/screen/Home.kt
+index bae7c02e42..5064335251 100644
+--- a/manager/app/src/main/java/com/rifsxd/ksunext/ui/screen/Home.kt
++++ b/manager/app/src/main/java/com/rifsxd/ksunext/ui/screen/Home.kt
+@@ -1001,7 +1001,7 @@ private fun InfoCard(autoExpand: Boolean = false) {
+                         Spacer(Modifier.height(16.dp))
+                         InfoCardItem(
+                             label = stringResource(R.string.home_susfs_version),
+-                            content = "${stringResource(R.string.supported)} | ${getSuSFSVersion()} (${getSuSFSVariant()})",
++                            content = "${stringResource(R.string.supported)} | ${getSuSFSVersion()} (Inline | ${getSuSFSVariant()})",
+                             icon = painterResource(R.drawable.ic_sus),
+                         )
+                     }
+diff --git a/userspace/ksud/bin/aarch64/susfsd b/userspace/ksud/bin/aarch64/susfsd
+new file mode 100755
+index 0000000000000000000000000000000000000000..f12146eb20fe99552ae36d5ef335922578dd6a31
+GIT binary patch
+literal 6064
+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
+
+literal 0
+HcmV?d00001
+
