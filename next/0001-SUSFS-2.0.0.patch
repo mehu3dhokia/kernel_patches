@@ -1,6 +1,6 @@
-From a9a4d07710cf36a8bb6b980cb0bf0d0894a29abb Mon Sep 17 00:00:00 2001
+From e33c29c9fc35634cb1518a72141b2146722610cd Mon Sep 17 00:00:00 2001
 From: pershoot <190600+pershoot@users.noreply.github.com>
-Date: Sat, 7 Mar 2026 22:30:00 -0500
+Date: Mon, 9 Mar 2026 05:30:00 -0500
 Subject: [PATCH] kernel (susfs (v2.0.0)): Introduce SuSFS
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -248,24 +248,49 @@ Date:   Sun Mar 8 11:10:29 2026 +0800
 - Since the susfs_run_sus_path_loop() is placed in umount_tw_func(), but if ksu_module_mounted or ksu_kernel_umount_enabled is false, then the function will not be executed, so here we just add another new taskwork execlusive for all extra susfs functions that need to be executed after ksu_handle_umount()
 
 -https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
+
+KernelSU (susfs (v2.0.0)): Update descriptions in Kconfig
+
+-Sync with the official KernelSU main repo
+
+Author: simonpunk <simonpunk2016@gmail.com>
+Date:   Mon Mar 9 10:00:32 2026 +0800
+
+ ## Upstream ##
+- See https://github.com/tiann/KernelSU/commit/6484caf138ace68a99105e1934c37d90a4ab8ec8
+
+-https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
+
+kernel & KernelSU (susfs (v2.0.0)): Implement SRCU for SUS_PATH
+
+-Deprecate CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH and CMD_SUSFS_SET_SDCARD_ROOT_PATH
+
+Author: simonpunk <simonpunk2016@gmail.com>
+Date:   Mon Mar 9 15:32:06 2026 +0800
+
+- The way we use RSCU instead RCU for SUS_PATH is because running kern_path() within RCU CS will trigger kernel bugs since it will sleep and wait, so here we need to use the sleepable RCU.
+
+- Remove deprcated CMDs: "CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH" and "CMD_SUSFS_SET_SDCARD_ROOT_PATH"
+
+-https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1
 ---
  kernel/Kbuild                                 |  11 +-
- kernel/Kconfig                                |  91 +++++++++-
+ kernel/Kconfig                                |  90 +++++++++-
  kernel/app_profile.c                          |   6 +
  kernel/kernel_umount.c                        |   3 +
  kernel/ksu.c                                  |  21 +++
- kernel/ksud.c                                 |  65 +++++++
- kernel/ksud.h                                 |  19 ++
+ kernel/ksud.c                                 |  65 ++++++++
+ kernel/ksud.h                                 |  19 +++
  kernel/selinux/rules.c                        |  11 +-
  kernel/selinux/selinux.c                      |  96 +++++++++++
  kernel/selinux/selinux.h                      |  13 ++
- kernel/setuid_hook.c                          | 127 ++++++++++++++
- kernel/sucompat.c                             | 151 ++++++++++++++++
+ kernel/setuid_hook.c                          | 127 +++++++++++++++
+ kernel/sucompat.c                             | 151 +++++++++++++++++
  kernel/sucompat.h                             |   4 +
- kernel/supercalls.c                           | 162 +++++++++++++++++-
+ kernel/supercalls.c                           | 154 +++++++++++++++++-
  .../java/com/rifsxd/ksunext/ui/screen/Home.kt |   2 +-
  userspace/ksud/bin/aarch64/susfsd             | Bin 0 -> 6064 bytes
- 16 files changed, 777 insertions(+), 5 deletions(-)
+ 16 files changed, 768 insertions(+), 5 deletions(-)
  create mode 100755 userspace/ksud/bin/aarch64/susfsd
 
 diff --git a/kernel/Kbuild b/kernel/Kbuild
@@ -296,7 +321,7 @@ index 690b62a9cd..62de832010 100644
 +
  # Keep a new line here!! Because someone may append config
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index cc4dbb3a10..082d9eb30b 100644
+index cc4dbb3a10..779ae64a69 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
 @@ -2,7 +2,6 @@ menu "KernelSU"
@@ -307,7 +332,7 @@ index cc4dbb3a10..082d9eb30b 100644
  	default y
  	help
  	  Enable kernel-level root privileges on Android System.
-@@ -17,4 +16,94 @@ config KSU_DEBUG
+@@ -17,4 +16,93 @@ config KSU_DEBUG
  	help
  	  Enable KernelSU debug mode.
  
@@ -321,24 +346,23 @@ index cc4dbb3a10..082d9eb30b 100644
 +	  Patch and Enable SUSFS to kernel with KernelSU.
 +
 +config KSU_SUSFS_SUS_PATH
-+	bool "Enable to hide suspicious path (NOT recommended)"
++	bool "Enable to hide suspicious path"
 +	depends on KSU_SUSFS
 +	default y
 +	help
 +	  - Allow hiding the user-defined path and all its sub-paths from various system calls.
-+	  - Includes temp fix for the leaks of app path in /sdcard/Android/data directory.
-+	  - Effective only on zygote spawned user app process.
++	  - Use "add_sus_path_loop" instead of "add_sus_path" if the user-defined path is frequently modified.
 +	  - Use with cautious as it may cause performance loss and will be vulnerable to side channel attacks,
 +	    just disable this feature if it doesn't work for you or you don't need it at all.
++	  - Effective only on zygote spawned user app process with uid >= 10000.
 +
 +config KSU_SUSFS_SUS_MOUNT
 +	bool "Enable to hide suspicious mounts"
 +	depends on KSU_SUSFS
 +	default y
 +	help
-+	  - Allow hiding the user-defined mount paths from /proc/self/[mounts|mountinfo|mountstat].
-+	  - Effective on all processes for hiding mount entries.
-+	  - mnt_id and mnt_group_id of the sus mount will be assigned to a much bigger number to solve the issue of id not being contiguous.
++	  - Automatically assign fake mnt_id and fake mnt_group_id for mounts mounted by ksu process until /sdcard is decrypted, this is to evade from mnt_id/mnt_group_id gap detections.
++	  - Allow hiding all sus mounts from /proc/self/[mounts|mountinfo|mountstat] for non-su processes.
 +
 +config KSU_SUSFS_SUS_KSTAT
 +	bool "Enable to spoof suspicious kstat"
@@ -346,7 +370,7 @@ index cc4dbb3a10..082d9eb30b 100644
 +	default y
 +	help
 +	  - Allow spoofing the kstat of user-defined file/directory.
-+	  - Effective only on zygote spawned user app process.
++	  - Effective only on zygote spawned user app process with uid >= 10000.
 +
 +config KSU_SUSFS_SPOOF_UNAME
 +	bool "Enable to spoof uname"
@@ -385,8 +409,8 @@ index cc4dbb3a10..082d9eb30b 100644
 +	default y
 +	help
 +	  - Allow redirecting a target path to be opened with another user-defined path.
-+	  - Effective only on processes with uid < 2000.
 +	  - Please be reminded that process with open access to the target and redirected path can be detected.
++	  - Effective only on processes with uid < 2000.
 +
 +config KSU_SUSFS_SUS_MAP
 +	bool "Enable to hide some mmapped real file from different proc maps interfaces"
@@ -397,7 +421,7 @@ index cc4dbb3a10..082d9eb30b 100644
 +	  - It does NOT support hiding for anon memory.
 +	  - It does NOT hide any inline hooks or plt hooks cause by the injected library itself.
 +	  - It may not be able to evade detections by apps that implement a good injection detection.
-+	  - Effective only on zygote spawned umounted user app process.
++	  - Effective only on zygote spawned umounted user app process >= 10000.
 +
 +endmenu
 +
@@ -461,7 +485,7 @@ index 2087e67187..6bfc733729 100644
  	pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/ksu.c b/kernel/ksu.c
-index e121ab4522..a8a43af4fa 100644
+index 2ba412a277..8bc1eda71d 100644
 --- a/kernel/ksu.c
 +++ b/kernel/ksu.c
 @@ -3,12 +3,20 @@
@@ -485,7 +509,7 @@ index e121ab4522..a8a43af4fa 100644
  #include "ksud.h"
  #include "supercalls.h"
  #include "ksu.h"
-@@ -37,13 +45,24 @@ int __init kernelsu_init(void)
+@@ -64,13 +72,24 @@ int __init kernelsu_init(void)
  
  	ksu_supercalls_init();
  
@@ -510,7 +534,7 @@ index e121ab4522..a8a43af4fa 100644
  
      ksu_file_wrapper_init();
  
-@@ -64,9 +83,11 @@ void kernelsu_exit(void)
+@@ -91,9 +110,11 @@ void kernelsu_exit(void)
  
  	ksu_observer_exit();
  
@@ -1231,7 +1255,7 @@ index b60cbde0a5..1a4ee87909 100644
                                 void *__never_use_argv, void *__never_use_envp,
                                 int *__never_use_flags);
 diff --git a/kernel/supercalls.c b/kernel/supercalls.c
-index e359f72327..7744ead78b 100644
+index e359f72327..2e5930cece 100644
 --- a/kernel/supercalls.c
 +++ b/kernel/supercalls.c
 @@ -12,6 +12,10 @@
@@ -1347,7 +1371,7 @@ index e359f72327..7744ead78b 100644
  static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
  {
  	struct pt_regs *real_regs = PT_REAL_REGS(regs);
-@@ -967,6 +1004,123 @@ static struct kprobe reboot_kp = {
+@@ -967,6 +1004,115 @@ static struct kprobe reboot_kp = {
  	.symbol_name = REBOOT_SYMBOL,
  	.pre_handler = reboot_handler_pre,
  };
@@ -1367,14 +1391,6 @@ index e359f72327..7744ead78b 100644
 +		}
 +		if (cmd == CMD_SUSFS_ADD_SUS_PATH_LOOP) {
 +			susfs_add_sus_path_loop(arg);
-+			return 0;
-+		}
-+		if (cmd == CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH) {
-+			susfs_set_i_state_on_external_dir(arg);
-+			return 0;
-+		}
-+		if (cmd == CMD_SUSFS_SET_SDCARD_ROOT_PATH) {
-+			susfs_set_i_state_on_external_dir(arg);
 +			return 0;
 +		}
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
@@ -1471,7 +1487,7 @@ index e359f72327..7744ead78b 100644
  
  void ksu_supercalls_init(void)
  {
-@@ -978,19 +1132,25 @@ void ksu_supercalls_init(void)
+@@ -978,19 +1124,25 @@ void ksu_supercalls_init(void)
                  ksu_ioctl_handlers[i].cmd);
      }
  
