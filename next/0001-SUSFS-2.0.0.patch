@@ -1,4 +1,4 @@
-From e33c29c9fc35634cb1518a72141b2146722610cd Mon Sep 17 00:00:00 2001
+From 242c23add366c2c8106738137cb92801c17e1dcd Mon Sep 17 00:00:00 2001
 From: pershoot <190600+pershoot@users.noreply.github.com>
 Date: Mon, 9 Mar 2026 05:30:00 -0500
 Subject: [PATCH] kernel (susfs (v2.0.0)): Introduce SuSFS
@@ -485,7 +485,7 @@ index 2087e67187..6bfc733729 100644
  	pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/ksu.c b/kernel/ksu.c
-index 2ba412a277..8bc1eda71d 100644
+index bb7414ab11..db1f2d6885 100644
 --- a/kernel/ksu.c
 +++ b/kernel/ksu.c
 @@ -3,12 +3,20 @@
@@ -509,7 +509,7 @@ index 2ba412a277..8bc1eda71d 100644
  #include "ksud.h"
  #include "supercalls.h"
  #include "ksu.h"
-@@ -64,13 +72,24 @@ int __init kernelsu_init(void)
+@@ -74,13 +82,24 @@ int __init kernelsu_init(void)
  
  	ksu_supercalls_init();
  
@@ -534,7 +534,7 @@ index 2ba412a277..8bc1eda71d 100644
  
      ksu_file_wrapper_init();
  
-@@ -91,9 +110,11 @@ void kernelsu_exit(void)
+@@ -101,9 +120,11 @@ void kernelsu_exit(void)
  
  	ksu_observer_exit();
  
